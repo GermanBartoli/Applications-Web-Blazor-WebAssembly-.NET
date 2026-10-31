@@ -1,0 +1,72 @@
+name: Validar y publicar en Cloudflare y GitHub Pages
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: publicacion-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+      - name: Verificar y compilar
+        run: |
+          dotnet publish BlazorAppVisualStudio/BlazorAppVisualStudio/BlazorAppVisualStudio.csproj -c Release -o salida-publicacion
+          node scripts/build.mjs
+      - name: Preparar GitHub Pages
+        run: node scripts/preparar-github-pages.mjs Applications-Web-Blazor-WebAssembly-.NET https://blazor-webassembly-german.pages.dev
+      - name: Guardar compilación de Cloudflare
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare
+          path: dist
+          include-hidden-files: true
+      - name: Guardar compilación de GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-github
+  cloudflare:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: validar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: cloudflare
+          path: dist
+      - name: Publicar en Cloudflare Pages
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=blazor-webassembly-german --branch=main --commit-hash=${{ github.sha }}
+  github-pages:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: validar
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - name: Publicar en GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

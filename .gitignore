@@ -1,0 +1,6 @@
+
+/dist/
+/dist-github/
+/salida-publicacion/
+**/bin/
+**/obj/
